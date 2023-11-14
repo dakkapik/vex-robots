@@ -7,16 +7,16 @@ brain=Brain()
 
 # Robot configuration code
 controller_1 = Controller(PRIMARY)
-left_drive_smart = Motor(Ports.PORT21, GearSetting.RATIO_18_1, False)
+left_drive_smart = Motor(Ports.PORT10, GearSetting.RATIO_18_1, False)
 right_drive_smart = Motor(Ports.PORT20, GearSetting.RATIO_18_1, True)
 drivetrain = DriveTrain(left_drive_smart, right_drive_smart, 319.19, 295, 40, MM, 1)
-mAxe = Motor(Ports.PORT3, GearSetting.RATIO_18_1, True)
-mTransmission = Motor(Ports.PORT2, GearSetting.RATIO_18_1, False)
-encoderAxe = Encoder(brain.three_wire_port.a)
-EncoderTrans = Encoder(brain.three_wire_port.c)
+mAxe = Motor(Ports.PORT19, GearSetting.RATIO_18_1, True)
+mTransmission = Motor(Ports.PORT9, GearSetting.RATIO_18_1, False)
+encoder_axe = Encoder(brain.three_wire_port.a)
 bumperEast = Bumper(brain.three_wire_port.e)
-bumperTop = Bumper(brain.three_wire_port.f)
-bumperWest = Bumper(brain.three_wire_port.g)
+bumperTop = Bumper(brain.three_wire_port.g)
+bumperWest = Bumper(brain.three_wire_port.f)
+encoder_transm = Encoder(brain.three_wire_port.c)
 
 
 # wait for rotation sensor to fully initialize
@@ -34,6 +34,55 @@ wait(200, MSEC)
 # clear the console to make sure we don't have the REPL in the console
 print("\033[2J")
 
+
+
+# define variables used for controlling motors based on controller inputs
+drivetrain_needs_to_be_stopped_controller_1 = False
+
+# define a task that will handle monitoring inputs from controller_1
+def rc_auto_loop_function_controller_1():
+    global drivetrain_needs_to_be_stopped_controller_1, remote_control_code_enabled
+    # process the controller input every 20 milliseconds
+    # update the motors based on the input values
+    while True:
+        if remote_control_code_enabled:
+            
+            # calculate the drivetrain motor velocities from the controller joystick axies
+            # left = axis3 + axis4
+            # right = axis3 - axis4
+            drivetrain_left_side_speed = controller_1.axis3.position() + controller_1.axis4.position()
+            drivetrain_right_side_speed = controller_1.axis3.position() - controller_1.axis4.position()
+            
+            # check if the values are inside of the deadband range
+            if abs(drivetrain_left_side_speed) < 5 and abs(drivetrain_right_side_speed) < 5:
+                # check if the motors have already been stopped
+                if drivetrain_needs_to_be_stopped_controller_1:
+                    # stop the drive motors
+                    left_drive_smart.stop()
+                    right_drive_smart.stop()
+                    # tell the code that the motors have been stopped
+                    drivetrain_needs_to_be_stopped_controller_1 = False
+            else:
+                # reset the toggle so that the deadband code knows to stop the motors next
+                # time the input is in the deadband range
+                drivetrain_needs_to_be_stopped_controller_1 = True
+            
+            # only tell the left drive motor to spin if the values are not in the deadband range
+            if drivetrain_needs_to_be_stopped_controller_1:
+                left_drive_smart.set_velocity(drivetrain_left_side_speed, PERCENT)
+                left_drive_smart.spin(FORWARD)
+            # only tell the right drive motor to spin if the values are not in the deadband range
+            if drivetrain_needs_to_be_stopped_controller_1:
+                right_drive_smart.set_velocity(drivetrain_right_side_speed, PERCENT)
+                right_drive_smart.spin(FORWARD)
+        # wait before repeating the process
+        wait(20, MSEC)
+
+# define variable for remote controller enable/disable
+remote_control_code_enabled = True
+
+rc_auto_loop_thread_controller_1 = Thread(rc_auto_loop_function_controller_1)
+
 #endregion VEXcode Generated Robot Configuration
 
 vexcode_brain_precision = 0
@@ -47,7 +96,8 @@ mAxe.set_velocity(100, PERCENT)
 class Axe():
     def __init__(self) -> None:
         self.printTimer = 15
-        self.count = 0
+        self.count = 0                                                                                                                                                                                  
+        self.axePointer = 0
 
         self.axePower = False
         self.transmissionPower = False
@@ -130,6 +180,13 @@ class Axe():
         mAxe.set_position( mAxe.position(DEGREES) , DEGREES)
         
 
+    def resetAxe(self):
+        self.axePointer = (encoder_axe.position(DEGREES))
+        while encoder_axe.position(DEGREES)< self.axePointer + 70 :
+            mAxe.spin(REVERSE)
+            pass
+        mAxe.stop()
+
     def transmissionCheck(self):
         if(bumperWest.pressing()):
             self.bumpedW()
@@ -184,8 +241,10 @@ class Axe():
                         self.changeMessage("TRIGGER")
                         self.axeStayAngle()
                         self.release_gear()
+                        
+                        # wait(1, SECONDS)
 
-                        wait(10, MSEC)
+                        # self.resetAxe()
 
                         self.axeStop()
                     else:
@@ -200,17 +259,19 @@ class Axe():
         self.axeRetreat()
 
 
+
     def move(self):
         self.displayUpdate()
         self.transmissionCheck()
         self.axeCheck()
 
-robot = Axe()
+robot = Axe.Axe()
 
 def when_started1():
     global robot, killSwitch
 
     while(not killSwitch):
+        print(encoder_axe.position(DEGREES))
         robot.move()
 
     brain.screen.set_cursor(4,1)
